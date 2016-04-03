@@ -48,7 +48,7 @@
 #define MLB_HLS_TIME_FORMAT					"%FT%T" // Ignore timezone info
 #define MLB_HLS_DEFAULT_CFGFILE				"mlb.cfg"
 #define MPLAYER_STREAM_CMD					" "
-
+#define MAX_RETRIES 10
 int show_debug = 0;
 
 CURL *curl_handle = NULL;
@@ -1514,20 +1514,27 @@ int main (int argc, char *argv[])
 
 							if (master->streams[i].line_count > (diff2*1.5))
 							{
-								int s, q=0;
+                                int s, q=0, k=0;
 								char tmp_str[MAX_STR_LEN] = {0};
 
 								for(s=0; s< master->streams[i].line_count; s++)
 								{
 									mlb_stream_getline(&master->streams[i], s, (char*)&tmp_str, MAX_STR_LEN);
 									if (tmp_str[0] == '#' && tmp_str[1] == 'E' && tmp_str[2] =='X' && tmp_str[3] =='T' &&
+                                        tmp_str[4] =='-' && tmp_str[5] =='X' &&  tmp_str[6] =='-' && tmp_str[7] =='K' &&
+                                        tmp_str[8] =='E' && tmp_str[9] =='Y' &&  tmp_str[10] ==':') // check if the temp string starts "#EXT-X-KEY:"
+                                    {
+                                    k = s;
+                                    }
+                                    if (tmp_str[0] == '#' && tmp_str[1] == 'E' && tmp_str[2] =='X' && tmp_str[3] =='T' &&
 										tmp_str[4] =='I' && tmp_str[5] =='N' &&  tmp_str[6] =='F' && tmp_str[7] ==':')
 									{
 										q++;
 										if (q == diff2)
 										{
 //											printf("OFFSET!! %d (%s)\n", s, tmp_str);
-											master->current_seg_line = s+1;
+                                            master->current_seg_line = k;
+                                            //master->current_seg_line = s+1;
 											break;
 										}
 									}
@@ -1657,17 +1664,25 @@ int main (int argc, char *argv[])
 										double s;
 										int i, q = 0;
 										uint32_t tmp_total = 0, t1, t2;
+                                        int r;
 
+                                        for (r = 0; r < MAX_RETRIES; r++)
+                                        {
 										t1 = get_time_ms();
 										decrypted_bytes = mlb_hls_get_and_decrypt(&p, tmp);
 										t2 = get_time_ms();
+                                            if (decrypted_bytes > 0)
+                                            {
+                                                break;
+                                            }
+                                            printf("retry: %d\n", r);
+                                        }
 
 										if (decrypted_bytes <= 0)
 										{
 											master->do_loop = 0;
 											break;
 										}
-
 										s = (decrypted_bytes/((t2 - t1)/1000.0)) * 8;
 
 										mlb_args->last_bps_time[mlb_args->last_bps_pos++] = (uint32_t) floor(s);
